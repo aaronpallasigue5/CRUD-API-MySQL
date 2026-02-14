@@ -4,48 +4,40 @@ import { getAIResponse } from "../services/aiService.js";
 
 const router = express.Router();
 
-// 1. POST - Create Mood
+// POST new mood
 router.post("/", async (req, res) => {
-  const { user_id, mood_text } = req.body;
+  const { full_name, mood_text } = req.body;
+
+  if (!mood_text || !full_name) {
+    return res.status(400).json({ error: "Name and mood are required" });
+  }
+
   try {
-    const [result] = await db.query(
-      "INSERT INTO mood_entries (user_id, mood_text) VALUES (?, ?)",
-      [user_id, mood_text]
-    );
+    // 1. Generate AI response based on mood_text
+    const ai_message = getAIResponse(mood_text);
 
-    const aiMessage = await getAIResponse(mood_text);
-
+    // 2. Insert into database
     await db.query(
-      "INSERT INTO ai_responses (mood_entry_id, ai_message) VALUES (?, ?)",
-      [result.insertId, aiMessage]
+      "INSERT INTO moods (full_name, mood_text, ai_message) VALUES (?, ?, ?)",
+      [full_name, mood_text, ai_message]
     );
 
-    res.json({ message: "Mood saved", aiMessage });
+    // 3. Return AI message in consistent key
+    res.json({ ai_message });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Database error" });
   }
 });
 
-// 2. GET - Read all Moods
+// GET all moods
 router.get("/", async (req, res) => {
-  const [rows] = await db.query(`
-    SELECT u.full_name, m.mood_text, a.ai_message 
-    FROM users u 
-    JOIN mood_entries m ON u.id = m.user_id 
-    JOIN ai_responses a ON m.id = a.mood_entry_id
-  `);
-  res.json(rows);
-});
-
-// 3. PUT - Update Full Name (New!)
-router.put("/user/:id", async (req, res) => {
-  const { full_name } = req.body;
-  const { id } = req.params;
   try {
-    await db.query("UPDATE users SET full_name = ? WHERE id = ?", [full_name, id]);
-    res.json({ message: "Name updated successfully", new_name: full_name });
+    const [rows] = await db.query("SELECT * FROM moods ORDER BY id DESC");
+    res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Database error" });
   }
 });
 
